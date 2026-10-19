@@ -1,0 +1,72 @@
+# Copies one release that was published to JFrog before the move to GitHub Releases into a
+# GitHub release of this repository, so that the installers and the download links keep
+# finding it once the old JFrog copies are deleted.
+#
+# Each jar is downloaded from JFrog, checked against the sha256 JFrog reports for it, renamed
+# to the GitHub asset name, then published by scripts/publish.sh like any new release.
+
+name: Backfill from JFrog
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Product"
+        required: true
+        type: choice
+        options: [cli, cli-all, jdbc, adbc]
+      version:
+        description: "Release version on JFrog (X.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download from JFrog and check the checksums
+        env:
+          PRODUCT: ${{ inputs.product }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be X.Y.Z: $VERSION"; exit 1; }
+          JFROG="https://softnetwork.jfrog.io/artifactory"
+          mkdir -p jars
+          for n in 6 7 8 9; do
+            case "$PRODUCT" in
+              cli)     module="softclient4es$n-cli_2.13";     file="$module-$VERSION-assembly.jar"; target="softclient4es$n-cli-$VERSION-assembly.jar" ;;
+              cli-all) module="softclient4es$n-cli-all_2.13"; file="$module-$VERSION-assembly.jar"; target="softclient4es$n-cli-all-$VERSION-assembly.jar" ;;
+              jdbc)    module="softclient4es$n-jdbc-driver";  file="$module-$VERSION.jar";          target="$file" ;;
+              adbc)    module="softclient4es$n-adbc-driver";  file="$module-$VERSION.jar";          target="$file" ;;
+            esac
+            path="app/softnetwork/elastic/$module/$VERSION/$file"
+            expected="$(curl -fsSL "$JFROG/api/storage/releases/$path" | python3 -c 'import sys,json; print(json.load(sys.stdin)["checksums"]["sha256"])')"
+            echo "Downloading $path"
+            curl -fsSL -o "jars/$target" "$JFROG/releases/$path"
+            actual="$(sha256sum "jars/$target" | cut -d' ' -f1)"
+            [[ "$actual" == "$expected" ]] || { echo "checksum mismatch for $file: $actual != $expected"; exit 1; }
+          done
+          ls -l jars
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT: ${{ inputs.product }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$PRODUCT" in
+            cli)     export SOURCE_REPO="SOFTNETWORK-APP/SoftClient4ES" ;;
+            cli-all) export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-repl" ;;
+            jdbc)    export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-jdbc" ;;
+            adbc)    export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-arrow" ;;
+          esac
+          export SOURCE_SHA="v$VERSION (copied from the JFrog release)"
+          bash scripts/publish.sh release "$PRODUCT" "$VERSION" jars/*.jar

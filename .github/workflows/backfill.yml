@@ -62,11 +62,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          case "$PRODUCT" in
-            cli)     export SOURCE_REPO="SOFTNETWORK-APP/SoftClient4ES" ;;
-            cli-all) export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-repl" ;;
-            jdbc)    export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-jdbc" ;;
-            adbc)    export SOURCE_REPO="SOFTNETWORK-APP/softclient4es-arrow" ;;
-          esac
+          # Only a public source repository is named in the release notes (publish.sh)
+          if [[ "$PRODUCT" == cli ]]; then export SOURCE_REPO="SOFTNETWORK-APP/SoftClient4ES"; fi
           export SOURCE_SHA="v$VERSION (copied from the JFrog release)"
           bash scripts/publish.sh release "$PRODUCT" "$VERSION" jars/*.jar

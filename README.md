@@ -5,12 +5,16 @@ Downloadable SoftClient4ES binaries. Each release holds one jar per Elasticsearc
 
 | Product | Release tags | Jar | License |
 | ------- | ------------ | --- | ------- |
-| REPL bundle (engine + extensions) | `cli-all-vX.Y.Z` | `softclient4es<N>-cli-all-X.Y.Z-assembly.jar` | Elastic License 2.0 |
+| REPL bundle (engine + extensions) | `cli-all-vX.Y.Z` | `softclient4es<N>-cli-all-X.Y.Z-assembly.jar` | mixed (see below) |
 | REPL (engine only) | `cli-vX.Y.Z` | `softclient4es<N>-cli-X.Y.Z-assembly.jar` | Apache-2.0 |
-| JDBC driver | `jdbc-vX.Y.Z` | `softclient4es<N>-jdbc-driver-X.Y.Z.jar` | Elastic License 2.0 |
-| ADBC driver | `adbc-vX.Y.Z` | `softclient4es<N>-adbc-driver-X.Y.Z.jar` | Elastic License 2.0 |
+| JDBC driver | `jdbc-vX.Y.Z` | `softclient4es<N>-jdbc-driver-X.Y.Z.jar` | mixed (see below) |
+| ADBC driver | `adbc-vX.Y.Z` | `softclient4es<N>-adbc-driver-X.Y.Z.jar` | mixed (see below) |
 
 `<N>` is the Elasticsearch major version of your cluster.
+
+The REPL bundle and the drivers are not open source: they combine Apache-2.0 and Elastic
+License 2.0 components with the proprietary JOIN engine, which is free to use. Only the plain
+REPL (`cli`) is pure Apache-2.0.
 
 ## Install the REPL
 

@@ -28,11 +28,14 @@ set -euo pipefail
 #                   `gh auth login` session is used when unset
 #   RELEASES_REPO   owner/repo of the releases repository
 #                   (default: SOFTNETWORK-APP/softclient4es-releases)
-#   SOURCE_REPO     provenance written into the release notes
+#   SOURCE_REPO     provenance written into the release notes — named only when it is a public
+#                   repository (PUBLIC_SOURCES below), a private one never is
 #                   (default: $GITHUB_REPOSITORY, else the origin of the current git checkout)
 #   SOURCE_SHA      (default: $GITHUB_SHA, else HEAD of the current git checkout)
 
 REPO="${RELEASES_REPO:-SOFTNETWORK-APP/softclient4es-releases}"
+# The source repositories the public release notes may name
+PUBLIC_SOURCES="SOFTNETWORK-APP/SoftClient4ES"
 
 die() { echo "Error: $*" >&2; exit 1; }
 
@@ -62,11 +65,13 @@ case "$MODE" in
   *) die "unknown mode '$MODE' (release | snapshot)" ;;
 esac
 
+# Every product but the plain engine embeds the extensions and the proprietary JOIN engine
+MIXED_LICENCE="Apache-2.0 and Elastic License 2.0 components plus the proprietary JOIN engine (free to use)."
 case "$PRODUCT" in
-  cli)     LABEL="REPL (engine only, Apache-2.0)";               PATTERN='cli-%s-assembly\.jar' ;;
-  cli-all) LABEL="REPL bundle (engine + extensions, Elastic License 2.0)"; PATTERN='cli-all-%s-assembly\.jar' ;;
-  jdbc)    LABEL="JDBC driver (Elastic License 2.0)";            PATTERN='jdbc-driver-%s\.jar' ;;
-  adbc)    LABEL="ADBC driver (Elastic License 2.0)";            PATTERN='adbc-driver-%s\.jar' ;;
+  cli)     LABEL="REPL (engine only)";                LICENCE="Apache-2.0.";     PATTERN='cli-%s-assembly\.jar' ;;
+  cli-all) LABEL="REPL bundle (engine + extensions)"; LICENCE="$MIXED_LICENCE"; PATTERN='cli-all-%s-assembly\.jar' ;;
+  jdbc)    LABEL="JDBC driver";                       LICENCE="$MIXED_LICENCE"; PATTERN='jdbc-driver-%s\.jar' ;;
+  adbc)    LABEL="ADBC driver";                       LICENCE="$MIXED_LICENCE"; PATTERN='adbc-driver-%s\.jar' ;;
   *) die "unknown product '$PRODUCT' (cli | cli-all | jdbc | adbc)" ;;
 esac
 
@@ -112,15 +117,24 @@ fi
 if [[ -z "${SOURCE_SHA:-}" ]]; then
   SOURCE_SHA="${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 fi
-SOURCE="${SOURCE_REPO:-unknown}@${SOURCE_SHA:-unknown}"
+if [[ -n "${SOURCE_REPO:-}" && " $PUBLIC_SOURCES " == *" $SOURCE_REPO "* ]]; then
+  PROVENANCE="Built from $SOURCE_REPO@${SOURCE_SHA:-unknown}."
+else
+  PROVENANCE="Build: ${SOURCE_SHA:-unknown}."
+fi
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # --- helpers on the releases repository ---
-# Prints "draft", "prerelease", "release" or nothing, for the release whose tag is $1.
+# Prints "release", "prerelease", "draft" or nothing, for the releases whose tag is $1. A
+# published release wins over any draft of the same tag (an interrupted or concurrent run).
 release_state() {
-  gh release list --repo "$REPO" --limit 1000 --json tagName,isDraft,isPrerelease \
-    -q ".[] | select(.tagName == \"$1\") | if .isDraft then \"draft\" elif .isPrerelease then \"prerelease\" else \"release\" end" \
-    | head -n 1
+  local states
+  states="$(gh release list --repo "$REPO" --limit 1000 --json tagName,isDraft,isPrerelease \
+    -q ".[] | select(.tagName == \"$1\") | if .isDraft then \"draft\" elif .isPrerelease then \"prerelease\" else \"release\" end")"
+  if grep -qx release <<< "$states"; then echo release
+  elif grep -qx prerelease <<< "$states"; then echo prerelease
+  elif grep -qx draft <<< "$states"; then echo draft
+  fi
 }
 
 # Fails unless every local file is an asset of release $1 with the same size.
@@ -135,19 +149,23 @@ verify_assets() {
 }
 
 if [[ "$MODE" == "release" ]]; then
-  state="$(release_state "$TAG")"
-  case "$state" in
-    release|prerelease) die "$TAG is already published: a release is never republished" ;;
-    draft)
-      # A draft is never visible to users: it is what an interrupted earlier run left behind.
-      echo "Removing the unpublished draft left by an earlier run: $TAG"
-      gh release delete "$TAG" --repo "$REPO" --yes
-      ;;
-  esac
+  while :; do
+    case "$(release_state "$TAG")" in
+      release|prerelease) die "$TAG is already published: a release is never republished" ;;
+      draft)
+        # A draft is never visible to users: it is what an interrupted earlier run left behind.
+        echo "Removing the unpublished draft left by an earlier run: $TAG"
+        gh release delete "$TAG" --repo "$REPO" --yes
+        ;;
+      *) break ;;
+    esac
+  done
 
   NOTES="SoftClient4ES $LABEL $VERSION, one jar per Elasticsearch major (6, 7, 8, 9).
 
-Built from $SOURCE.
+Licence: $LICENCE
+
+$PROVENANCE
 
 Verify a download with \`shasum -a 256 -c <jar>.sha256\`."
 
@@ -162,7 +180,9 @@ else
   NOTES="Rolling snapshot of the SoftClient4ES $LABEL, one jar per Elasticsearch major (6, 7, 8, 9).
 Its jars are replaced on every snapshot publish: not for production.
 
-Current: $VERSION, built from $SOURCE, published $NOW.
+Licence: $LICENCE
+
+Current: $VERSION, published $NOW. $PROVENANCE
 
 Verify a download with \`shasum -a 256 -c <jar>.sha256\`."
 

@@ -19,8 +19,10 @@ set -euo pipefail
 # <product>-snapshot pre-releases superseded it.
 #
 # Every version is checked before anything is deleted: one failed check deletes nothing. A deleted
-# folder must answer 404 afterwards, then it is purged from the trash can (JFrog keeps deleted
-# files there, still billed, until its retention expires).
+# folder must hold no file afterwards (JFrog may re-create a deleted version folder EMPTY), then it
+# is purged from the trash can (JFrog keeps deleted files there, still billed, until its retention
+# expires). An empty folder left by an earlier deletion is deleted and purged again, so a rerun
+# also empties the trash of a run that stopped before purging.
 #
 # Env:
 #   JFROG_TOKEN     access token with delete permission on both repositories (delete only; plan
@@ -89,6 +91,11 @@ d=json.load(sys.stdin); print(sys.argv[1], d.get("size",0), d.get("checksums",{}
   done
 }
 
+# HTTP status of a JFrog folder: 200 present (possibly empty), 404 absent.
+folder_status() {
+  jfrog -o /dev/null -w '%{http_code}' "$JFROG_URL/api/storage/$1/$2"
+}
+
 # The JFrog modules of one product for ES major $1, the copied (GitHub) one first.
 modules_of() {
   case "$PRODUCT" in
@@ -138,14 +145,20 @@ for version in "${VERSIONS[@]}"; do
     for module in $(modules_of "$major"); do
       path="$GROUP_PATH/$module/$version"
       listing="$(folder_files "$repo" "$path")"
-      [[ -n "$listing" ]] || continue
+      if [[ -z "$listing" ]]; then
+        # An empty folder is what a deletion leaves when JFrog re-creates the version folder: its
+        # files may still be in the trash can, so it is deleted and purged again
+        if [[ "$(folder_status "$repo" "$path")" == 200 ]]; then
+          TARGETS+=("$repo $path 0")
+          say "- \`$repo/$path\` — empty folder left by an earlier deletion (trash can purged again)"
+        fi
+        continue
+      fi
       bytes="$(awk '{ s += $2 } END { print s + 0 }' <<< "$listing")"
       files="$(wc -l <<< "$listing" | tr -d ' ')"
-      if [[ "$files" -gt 0 ]]; then
-        TARGETS+=("$repo $path $bytes")
-        TOTAL=$((TOTAL + bytes))
-        say "- \`$repo/$path\` — $files files, $((bytes / 1000000)) MB"
-      fi
+      TARGETS+=("$repo $path $bytes")
+      TOTAL=$((TOTAL + bytes))
+      say "- \`$repo/$path\` — $files files, $((bytes / 1000000)) MB"
     done
   done
 done
@@ -171,9 +184,14 @@ for target in "${TARGETS[@]}"; do
     failed=1
     continue
   fi
-  code="$(jfrog -o /dev/null -w '%{http_code}' "$JFROG_URL/api/storage/$repo/$path")"
-  if [[ "$code" != "404" ]]; then
-    say "- \`$repo/$path\` still answers HTTP $code after its deletion"
+  # Deleted = absent, or present but EMPTY: JFrog may re-create a deleted version folder empty
+  if ! remaining="$(folder_files "$repo" "$path")"; then
+    say "- deleted \`$repo/$path\`, but could not check it afterwards"
+    failed=1
+    continue
+  fi
+  if [[ -n "$remaining" ]]; then
+    say "- \`$repo/$path\` still holds files after its deletion"
     failed=1
     continue
   fi

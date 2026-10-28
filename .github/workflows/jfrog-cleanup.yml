@@ -1,0 +1,68 @@
+# Deletes from JFrog the fat jars that GitHub Releases now serves: the versions copied here
+# (checked jar by jar against the GitHub copy's sha256) and the -SNAPSHOT versions (superseded by
+# the rolling <product>-snapshot pre-releases). See scripts/jfrog-delete.sh.
+#
+# `plan` always runs, without credentials, and lists what would be deleted. `delete` runs only when
+# dry_run is unchecked, in the `jfrog-cleanup` environment: it waits for a reviewer's approval, and
+# only that environment holds JFROG_CLEANUP_TOKEN (delete permission on libs-release-local and
+# libs-snapshot-local, plus the trash can).
+
+name: JFrog cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Product"
+        required: true
+        type: choice
+        options: [cli, cli-all, jdbc, adbc]
+      versions:
+        description: "Versions, space- or comma-separated (X.Y.Z copied to GitHub, or X.Y[.Z]-SNAPSHOT)"
+        required: true
+        type: string
+      dry_run:
+        description: "Plan only: list what would be deleted"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jfrog-cleanup
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check the versions and list what would be deleted
+        env:
+          PRODUCT: ${{ inputs.product }}
+          VERSIONS: ${{ inputs.versions }}
+        run: |
+          IFS=', ' read -r -a list <<< "$VERSIONS"
+          bash scripts/jfrog-delete.sh plan "$PRODUCT" "${list[@]}"
+
+  delete:
+    needs: plan
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    environment: jfrog-cleanup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Delete from JFrog and purge the trash can
+        env:
+          JFROG_TOKEN: ${{ secrets.JFROG_CLEANUP_TOKEN }}
+          PRODUCT: ${{ inputs.product }}
+          VERSIONS: ${{ inputs.versions }}
+        run: |
+          IFS=', ' read -r -a list <<< "$VERSIONS"
+          bash scripts/jfrog-delete.sh delete "$PRODUCT" "${list[@]}"

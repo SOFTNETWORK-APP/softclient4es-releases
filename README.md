@@ -62,3 +62,21 @@ scripts/publish.sh snapshot jdbc 0.3.5-SNAPSHOT es*/target/softclient4es*-jdbc-d
 
 A release is never overwritten. Versions published to JFrog before this repository existed are
 copied with the **Backfill from JFrog** workflow.
+
+### JFrog cleanup
+
+The **JFrog cleanup** workflow deletes from JFrog the jars this repository now serves, through
+[`scripts/jfrog-delete.sh`](scripts/jfrog-delete.sh): pick a product and one or more versions.
+
+- A release version is deleted only if it was copied here: for every Elasticsearch major, its
+  GitHub jar must have the sha256 of the JFrog jar. Its Scala 2.12 builds go with it.
+- A `-SNAPSHOT` version is deleted from the snapshots repository (the rolling `<product>-snapshot`
+  pre-releases replaced it).
+- Every version is checked before anything is deleted, and the deleted folders are purged from
+  the JFrog trash can.
+- `dry_run` (the default) only lists what would be deleted. A real run waits for approval in the
+  `jfrog-cleanup` environment, the only place that holds `JFROG_CLEANUP_TOKEN`.
+
+```bash
+scripts/jfrog-delete.sh plan cli 0.21.0 0.22.0 0.23.0        # no credentials needed
+```

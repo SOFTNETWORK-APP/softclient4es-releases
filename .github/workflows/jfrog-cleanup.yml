@@ -30,8 +30,12 @@ on:
 permissions:
   contents: read
 
+# One group per product + version list: GitHub keeps a single PENDING run per group (a newer one
+# cancels it), so a coarser group would cancel every run queued behind one waiting for approval.
+# Different lists touch different folders; an overlap is harmless (an already deleted folder
+# answers 404 and is skipped).
 concurrency:
-  group: jfrog-cleanup
+  group: jfrog-cleanup-${{ inputs.product }}-${{ inputs.versions }}
   cancel-in-progress: false
 
 jobs:

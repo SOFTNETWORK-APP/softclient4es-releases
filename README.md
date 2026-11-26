@@ -32,12 +32,12 @@ Download the jar for your Elasticsearch major from the [releases](https://github
 page, then check it:
 
 ```bash
-shasum -a 256 -c softclient4es8-jdbc-driver-0.3.3.jar.sha256
+shasum -a 256 -c softclient4es8-jdbc-driver-0.3.5.jar.sha256
 ```
 
 A direct link has the form
 `https://github.com/SOFTNETWORK-APP/softclient4es-releases/releases/download/<tag>/<jar>`, for example
-`.../download/jdbc-v0.3.3/softclient4es8-jdbc-driver-0.3.3.jar`.
+`.../download/jdbc-v0.3.5/softclient4es8-jdbc-driver-0.3.5.jar`.
 
 ## Snapshots
 
@@ -56,8 +56,8 @@ Releases are published by the release workflows of the producer repositories thr
 [`scripts/publish.sh`](scripts/publish.sh), which also runs locally with an authenticated `gh`:
 
 ```bash
-scripts/publish.sh release  jdbc 0.3.4          es*/target/softclient4es*-jdbc-driver-0.3.4.jar
-scripts/publish.sh snapshot jdbc 0.3.5-SNAPSHOT es*/target/softclient4es*-jdbc-driver-0.3.5-SNAPSHOT.jar
+scripts/publish.sh release  jdbc 0.3.5          es*/target/softclient4es*-jdbc-driver-0.3.5.jar
+scripts/publish.sh snapshot jdbc 0.3.6-SNAPSHOT es*/target/softclient4es*-jdbc-driver-0.3.6-SNAPSHOT.jar
 ```
 
 A release is never overwritten. Versions published to JFrog before this repository existed are
